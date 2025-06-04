@@ -225,16 +225,28 @@ def create_plot_for_multiple_experiments(plot_dimensions=None, plot_title=None):
         plt.title(plot_title)
         
         
-def aggregate_fitness_dataframe(df):
+def aggregate_dataframe(df, central_measure="median", percentile_interval=(0.25, 0.75)):
     aggregated_df = df.groupby("Iteration").agg(
-        Fitness=("Fitness", "mean"),
-        lower_percentile=("Fitness", lambda x: x.quantile(0.)),
-        upper_percentile=("Fitness", lambda x: x.quantile(1.))
+        Central_value=("Value to aggregate", central_measure),
+        Lower_value=("Value to aggregate", lambda x: x.quantile(percentile_interval[0])),
+        Upper_value=("Value to aggregate", lambda x: x.quantile(percentile_interval[1]))
     ).reset_index()
     return aggregated_df
+
+
+def add_interval_to_plot(aggregated_df, lineplot):
+    plt.fill_between(aggregated_df["Iteration"], 
+                     aggregated_df["Lower_value"], 
+                     aggregated_df["Upper_value"], 
+                     alpha=0.2)
+    
+    # Add subtle contours to the intervals
+    line_color = lineplot.get_lines()[-1].get_color()
+    plt.plot(aggregated_df["Iteration"], aggregated_df["Lower_value"], color=line_color, alpha=0.3)
+    plt.plot(aggregated_df["Iteration"], aggregated_df["Upper_value"], color=line_color, alpha=0.3)
     
     
-def add_evaluation_data_from_one_experiment_to_plot(*dataframes, experiment_name, single_run_identifiers=None, chunk_size=100):
+def add_evaluation_data_from_one_experiment_to_plot(*dataframes, experiment_name, single_run_identifiers=None, central_measure="mean", interval_measure="standard"):
     if single_run_identifiers is None:
         single_run_identifiers = range(1, len(dataframes) + 1)
     else:
@@ -244,34 +256,25 @@ def add_evaluation_data_from_one_experiment_to_plot(*dataframes, experiment_name
     combined_df = pd.concat(dataframes, keys=single_run_identifiers, names=["Run", "Iteration"])
     combined_df.reset_index(inplace=True)
     combined_df.drop(columns="Evaluation result", inplace=True)
-    combined_df.rename(columns={"Best yet result": "Fitness"}, inplace=True)
+    combined_df.rename(columns={"Best yet result": "Value to aggregate"}, inplace=True)
     
     # Aggregate the DataFrame
-    aggregated_df = aggregate_fitness_dataframe(combined_df)
+    if interval_measure.lower() == "standard":
+        percentile_interval=(0., 1.)
+    elif interval_measure.lower() == "quartiles":
+        percentile_interval=(0.25, 0.75)
+    else:
+        raise ValueError("Invalid interval measure. Use 'standard' or 'quartiles'.")
+    
+    aggregated_df = aggregate_dataframe(combined_df, central_measure, percentile_interval)
+    aggregated_df.rename(columns={"Central_value": "Fitness"}, inplace=True)
     
     # sns.lineplot(x="Iteration", y="Fitness", errorbar=("pi", 100), label=experiment_name, data=combined_df)
     lineplot = sns.lineplot(x="Iteration", y="Fitness", label=experiment_name, data=aggregated_df)
-    plt.fill_between(aggregated_df["Iteration"], 
-                     aggregated_df["lower_percentile"], 
-                     aggregated_df["upper_percentile"], 
-                     alpha=0.2)
-    
-    # Add subtle contours to the intervals
-    line_color = lineplot.get_lines()[-1].get_color()
-    plt.plot(aggregated_df["Iteration"], aggregated_df["lower_percentile"], color=line_color, alpha=0.3)
-    plt.plot(aggregated_df["Iteration"], aggregated_df["upper_percentile"], color=line_color, alpha=0.3)
-        
-        
-def aggregate_runtime_dataframe(df):
-    aggregated_df = df.groupby("Iteration").agg(
-        Runtime=("Runtime (timesteps)", "mean"),
-        lower_percentile=("Runtime (timesteps)", lambda x: x.quantile(0.025)),
-        upper_percentile=("Runtime (timesteps)", lambda x: x.quantile(0.975))
-    ).reset_index()
-    return aggregated_df
+    add_interval_to_plot(aggregated_df, lineplot)
     
     
-def add_runtime_data_from_one_experiment_to_plot(*dataframes, experiment_name, single_run_identifiers=None, chunk_size=100):
+def add_fitness_data_from_one_experiment_to_plot(*dataframes, experiment_name, single_run_identifiers=None, central_measure="mean", interval_measure="standard"):
     if single_run_identifiers is None:
         single_run_identifiers = range(1, len(dataframes) + 1)
     else:
@@ -280,23 +283,80 @@ def add_runtime_data_from_one_experiment_to_plot(*dataframes, experiment_name, s
     
     combined_df = pd.concat(dataframes, keys=single_run_identifiers, names=["Run", "Iteration"])
     combined_df.reset_index(inplace=True)
-    combined_df = combined_df.melt(("Run", "Iteration"), var_name="Task", value_name="Runtime (timesteps)")
+    combined_df = combined_df.melt(("Run", "Iteration"), var_name="Task", value_name="Value to aggregate")
     
     # Aggregate the DataFrame
-    aggregated_df = aggregate_runtime_dataframe(combined_df)
-    aggregated_df.rename(columns={"Runtime": "Runtime (timesteps)"}, inplace=True)
+    if interval_measure.lower() == "standard":
+        percentile_interval=(0.025, 0.975)
+    elif interval_measure.lower() == "quartiles":
+        percentile_interval=(0.25, 0.75)
+    else:
+        raise ValueError("Invalid interval measure. Use 'standard' or 'quartiles'.")
+    
+    aggregated_df = aggregate_dataframe(combined_df, central_measure, percentile_interval)
+    aggregated_df.rename(columns={"Central_value": "Fitness"}, inplace=True)
+    
+    # sns.lineplot(x="Iteration", y="Runtime (timesteps)", errorbar="pi", label=experiment_name, data=combined_df)
+    lineplot = sns.lineplot(x="Iteration", y="Fitness", label=experiment_name, data=aggregated_df)
+    add_interval_to_plot(aggregated_df, lineplot)
+    
+    
+def add_runtime_data_from_one_experiment_to_plot(*dataframes, experiment_name, single_run_identifiers=None, central_measure="mean", interval_measure="standard"):
+    if single_run_identifiers is None:
+        single_run_identifiers = range(1, len(dataframes) + 1)
+    else:
+        if len(single_run_identifiers) != len(dataframes):
+            raise ValueError("The number of single run identifiers must be the same as the number of dataframes.")
+    
+    combined_df = pd.concat(dataframes, keys=single_run_identifiers, names=["Run", "Iteration"])
+    combined_df.reset_index(inplace=True)
+    combined_df = combined_df.melt(("Run", "Iteration"), var_name="Task", value_name="Value to aggregate")
+    
+    # Aggregate the DataFrame
+    if interval_measure.lower() == "standard":
+        percentile_interval=(0.025, 0.975)
+    elif interval_measure.lower() == "quartiles":
+        percentile_interval=(0.25, 0.75)
+    else:
+        raise ValueError("Invalid interval measure. Use 'standard' or 'quartiles'.")
+    
+    aggregated_df = aggregate_dataframe(combined_df, central_measure, percentile_interval)
+    aggregated_df.rename(columns={"Central_value": "Runtime (timesteps)"}, inplace=True)
     
     # sns.lineplot(x="Iteration", y="Runtime (timesteps)", errorbar="pi", label=experiment_name, data=combined_df)
     lineplot = sns.lineplot(x="Iteration", y="Runtime (timesteps)", label=experiment_name, data=aggregated_df)
-    plt.fill_between(aggregated_df["Iteration"], 
-                     aggregated_df["lower_percentile"], 
-                     aggregated_df["upper_percentile"], 
-                     alpha=0.2)
+    add_interval_to_plot(aggregated_df, lineplot)
     
-    # Add subtle contours to the intervals
-    line_color = lineplot.get_lines()[-1].get_color()
-    plt.plot(aggregated_df["Iteration"], aggregated_df["lower_percentile"], color=line_color, alpha=0.3, linewidth=0.5)
-    plt.plot(aggregated_df["Iteration"], aggregated_df["upper_percentile"], color=line_color, alpha=0.3, linewidth=0.5)
+    
+def add_time_data_from_one_experiment_to_plot(*dataframes, experiment_name, single_run_identifiers=None, central_measure="mean", interval_measure="standard"):
+    if single_run_identifiers is None:
+        single_run_identifiers = range(1, len(dataframes) + 1)
+    else:
+        if len(single_run_identifiers) != len(dataframes):
+            raise ValueError("The number of single run identifiers must be the same as the number of dataframes.")
+    
+    combined_df = pd.concat(dataframes, keys=single_run_identifiers, names=["Run", "Iteration"])
+    combined_df.reset_index(inplace=True)
+    combined_df = combined_df.melt(("Run", "Iteration"), var_name="Task", value_name="Value to aggregate")
+    
+    # Aggregate the DataFrame
+    if interval_measure.lower() == "standard":
+        percentile_interval=(0., 1.)
+    elif interval_measure.lower() == "quartiles":
+        percentile_interval=(0.25, 0.75)
+    else:
+        raise ValueError("Invalid interval measure. Use 'standard' or 'quartiles'.")
+    
+    aggregated_df = aggregate_dataframe(combined_df, central_measure, percentile_interval)
+    aggregated_df.rename(columns={"Central_value": "Wall-clock time (seconds)"}, inplace=True)
+    
+    # sns.lineplot(x="Iteration", y="Wall-clock time (seconds)", errorbar="pi", label=experiment_name, data=combined_df)
+    lineplot = sns.lineplot(x="Iteration", y="Wall-clock time (seconds)", label=experiment_name, data=aggregated_df)
+    add_interval_to_plot(aggregated_df, lineplot)
+    
+    
+def add_horizontal_dashed_line_to_plot(line_name, y_value):
+    plt.axhline(y=y_value, linestyle='--', color='gray', label=line_name)
     
     
 def show_plot_for_multiple_experiments(num_of_iterations_to_plot=200, values_range=(0,None), disable_legend=False, legend_location="upper left", legend_shadow=True):

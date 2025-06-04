@@ -18,7 +18,7 @@ def load_distances(path_to_distances_file):
         return [float(line.split()[-1]) for line in file.readlines()]
 
 
-def plot_distances_for_multiple_experiments(distances_list, experiment_names, plot_dimensions):
+def plot_distances_for_multiple_experiments(distances_list, experiment_names, plot_dimensions, plot_type):
     if len(distances_list) != len(experiment_names):
         raise ValueError("Number of experiments and experiment names should be equal.")
     
@@ -30,8 +30,13 @@ def plot_distances_for_multiple_experiments(distances_list, experiment_names, pl
         data.extend([(exp_name, distance) for distance in distances])
     data = pd.DataFrame(data, columns=["Experiment", "Distance"])
     
-    # Use seaborn stripplot for showing individual points
-    sns.stripplot(data=data, x="Experiment", y="Distance", hue="Experiment")
+    # Use seaborn to render the distance plot (hue is used just to add colors)
+    if plot_type == "box":
+        sns.boxplot(data=data, x="Experiment", y="Distance", hue="Experiment")
+    elif plot_type == "violin":
+        sns.violinplot(data=data, x="Experiment", y="Distance", hue="Experiment")
+    elif plot_type == "scatter":
+        sns.stripplot(data=data, x="Experiment", y="Distance", hue="Experiment")
         
     # Rotate x-axis labels to avoid overlap
     plt.xticks(rotation=45, ha='right')
@@ -54,7 +59,8 @@ def main(args):
     plot_distances_for_multiple_experiments(
         distances_list,
         experiment_names,
-        args.plot_dimensions
+        args.plot_dimensions,
+        args.plot_type
     )
 
 
@@ -63,5 +69,6 @@ if __name__ == "__main__":
     parser.add_argument("paths_to_all_the_experiment_folders", type=str, nargs="+", help="Paths to the folders for all the experiments that are required to be plotted, where the data from all the experiment runs are stored in their respective subfolders.")
     parser.add_argument("-pd", "--plot_dimensions", nargs=2, type=float, default=None, help="Plot dimensions (two values, x and y).")
     parser.add_argument("-n", "--experiment_names", type=str, nargs="+", help="Names for the individual experiments in the order as passed to the base path argument.")
+    parser.add_argument("-t", "--plot_type", type=str, default="box", choices=["box", "violin", "scatter"], help="Type of plot to create.")
     
     main(parser.parse_args())
